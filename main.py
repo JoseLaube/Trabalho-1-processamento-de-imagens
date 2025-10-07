@@ -26,22 +26,9 @@ def adicionar_borda_3d(matriz, tamanho_borda=1):
     
     return np.array(matriz_com_borda)
 
-def encontrar_componente_conexo_6(volume):
-    n, m, k = volume.shape 
-
-    #cria uma cópia da matriz com 0s
+def encontrar_componentes_conexos(volume, direcoes):
+    n, m, k = volume.shape
     visitado = np.zeros((n, m, k), dtype=bool)
-
-    #lista de direções conexão 6
-    direcao = [
-        (1,0,0),
-        (-1,0,0),
-        (0,1,0),
-        (0,-1,0),
-        (0,0,1),
-        (0,0,-1)
-    ]
-
     componentes = []
 
     def bfs(x, y, z, valor_alvo):
@@ -53,18 +40,17 @@ def encontrar_componente_conexo_6(volume):
             cx, cy, cz = fila.popleft()
             componente.append((cx, cy, cz))
             
-            # Verificar todos os vizinhos (conectividade-6)
-            for dx, dy, dz in direcao:
+            # Usar a lista de direções que foi passada como argumento
+            for dx, dy, dz in direcoes:
                 nx, ny, nz = cx + dx, cy + dy, cz + dz
                 
                 if (0 <= nx < n and 0 <= ny < m and 0 <= nz < k):
-                    # Verificar se não foi visitado e tem o mesmo valor
                     if not visitado[nx, ny, nz] and volume[nx, ny, nz] == valor_alvo:
                         visitado[nx, ny, nz] = True
                         fila.append((nx, ny, nz))
         
         return componente
-    
+
     for i in range(n):
         for j in range(m):
             for l in range(k):
@@ -72,7 +58,7 @@ def encontrar_componente_conexo_6(volume):
                     valor_atual = volume[i, j, l]
                     if valor_atual in [140, 200, 255]:
                         componente = bfs(i, j, l, valor_atual)
-                        if len(componente) > 1:  # Pelo menos 2 voxels conectados
+                        if len(componente) > 1:
                             componentes.append({
                                 'valor': valor_atual,
                                 'voxels': componente,
@@ -80,6 +66,26 @@ def encontrar_componente_conexo_6(volume):
                             })
     
     return componentes
+
+def plotar_histogramas(componentes, titulo_sufixo=""):
+    tamanhos_por_valor = {140: [], 200: [], 255: []}
+    
+    for comp in componentes:
+        valor = comp['valor']
+        if valor in tamanhos_por_valor:
+            tamanhos_por_valor[valor].append(comp['tamanho'])
+            
+    for valor, tamanhos in tamanhos_por_valor.items():
+        if not tamanhos:
+            print(f"Nenhum componente encontrado para o valor {valor}")
+            continue
+            
+        plt.figure() # figura nova para cada histograma
+        plt.hist(tamanhos, bins=20) # 'bins' controla o número de barras
+        plt.title(f'Histograma dos grupos de valor {valor} {titulo_sufixo}')
+        plt.xlabel('Tamanho do Agrupamento (em voxels)')
+        plt.ylabel('Frequência (Quantidade de Agrupamentos)')
+        plt.show()
 
 def componentes_para_grafos(componentes):
     grafos = []
@@ -112,7 +118,7 @@ def componentes_para_grafos(componentes):
     
     return grafos
 
-def visualizar_grafos_3d(grafos):
+def visualizar_grafos_3d(grafos, titulo_sufixo=""):
     from mpl_toolkits.mplot3d import Axes3D
     
     fig = plt.figure(figsize=(15, 10))
@@ -154,7 +160,7 @@ def visualizar_grafos_3d(grafos):
     ax.set_xlabel('X')
     ax.set_ylabel('Y')
     ax.set_zlabel('Z')
-    ax.set_title(f'Grafos 3D dos Componentes Conexos - Total: {len(grafos)} grafos')
+    ax.set_title(f'Grafos 3D dos Componentes Conexos - Total: {len(grafos)} grafos {titulo_sufixo}')
     
     # Legenda
     handles, labels = ax.get_legend_handles_labels()
@@ -223,8 +229,55 @@ def estatisticas_detalhadas(componentes):
     print(f"RESUMO GERAL:")
     print(f"  → Total de componentes: {total_componentes}")
     print(f"  → Total de voxels nos componentes: {total_voxels}")
-    print(f"  → Média geral de tamanho: {total_voxels/total_componentes:.1f} voxels/componente")
+    if total_componentes > 0:
+        print(f"  → Média geral de tamanho: {total_voxels/total_componentes:.1f} voxels/componente")
     print("="*60)
+    
+
+
+def executar_analise_completa(volume, tipo_conectividade):
+
+    print(f"# ANÁLISE COM CONECTIVIDADE-{tipo_conectividade}")
+    
+    # Define a lista de direções com base no tipo
+    if tipo_conectividade == 6:
+        direcoes = [
+            (1,0,0), (-1,0,0), (0,1,0),
+            (0,-1,0), (0,0,1), (0,0,-1)
+        ]
+    elif tipo_conectividade == 26:
+        direcoes = []
+        for i in [-1, 0, 1]:
+            for j in [-1, 0, 1]:
+                for k in [-1, 0, 1]:
+                    if i == 0 and j == 0 and k == 0:
+                        continue
+                    direcoes.append((i, j, k))
+    else:
+        print(f"Tipo de conectividade '{tipo_conectividade}' não suportado.")
+        return
+
+    # Passo 1: Encontrar componentes usando a função unificada
+    componentes = encontrar_componentes_conexos(volume, direcoes)
+
+    print(f"\nTotal de componentes encontrados: {len(componentes)}")
+    
+    # Adiciona o sufixo para os títulos dos gráficos
+    sufixo_titulo = f"(Conectividade-{tipo_conectividade})"
+    estatisticas_detalhadas(componentes)
+
+    print("\nGerando histogramas...")
+    plotar_histogramas(componentes, titulo_sufixo=sufixo_titulo)
+
+    print("\nConvertendo para grafos para visualização...")
+    grafos = componentes_para_grafos(componentes)
+    
+    if grafos:
+        print(f"Convertidos para {len(grafos)} grafos.")
+        print("Gerando visualização 3D...")
+        visualizar_grafos_3d(grafos, titulo_sufixo=sufixo_titulo)
+    else:
+        print("Nenhum grafo grande o suficiente para visualizar!")
 
 # Código principal
 with open('volume_TAC', 'rb') as v:
@@ -236,29 +289,7 @@ print(f"Dimensões originais: {volume.shape}")
 volume_cb = adicionar_borda_3d(volume, tamanho_borda=1)
 print(f"Dimensões com borda: {volume_cb.shape}")
 
-# Busca dos componentes conexos
-print("Buscando componentes conexos...")
-componentes = encontrar_componente_conexo_6(volume_cb)
-    
-print(f"Total de componentes encontrados: {len(componentes)}")
+executar_analise_completa(volume_cb, tipo_conectividade=6)
+executar_analise_completa(volume_cb, tipo_conectividade=26)
 
-# Ccontagem dos componentes por valor
-contagem = contar_componentes_por_valor(componentes)
-print(f"\nCONTAGEM POR VALOR:")
-print(f"  Valor 140: {contagem[140]} componentes")
-print(f"  Valor 200: {contagem[200]} componentes") 
-print(f"  Valor 255: {contagem[255]} componentes")
-
-estatisticas_detalhadas(componentes)
-
-# Converter para grafos
-print("\nConvertendo para grafos...")
-grafos = componentes_para_grafos(componentes)
-print(f"Convertidos para {len(grafos)} grafos")
-
-# Visualização 3D
-if grafos:
-    print("Gerando visualização 3D...")
-    visualizar_grafos_3d(grafos)
-else:
-    print("Nenhum grafo para visualizar!")
+print("\nAnálise concluída.")
